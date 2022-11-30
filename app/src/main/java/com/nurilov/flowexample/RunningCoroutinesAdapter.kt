@@ -1,5 +1,6 @@
 package com.nurilov.flowexample
 
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.lifecycle.LifecycleCoroutineScope
@@ -8,15 +9,16 @@ import com.nurilov.flowexample.databinding.CoroutineRepresentationLayoutBinding
 import kotlinx.coroutines.flow.StateFlow
 
 interface RunningCoroutinesDataProvider {
-    val runningCoroutines: StateFlow<List<CoroutineRepresentation>>
+    val runningCoroutines: StateFlow<List<CoroutineTask>>
 }
 
+@SuppressLint("NotifyDataSetChanged")
 class RunningCoroutinesAdapter(
     private val dataProvider: RunningCoroutinesDataProvider,
     private val coroutineScope: LifecycleCoroutineScope,
 ): RecyclerView.Adapter<RunningCoroutinesAdapter.ViewHolder>() {
 
-    private val dataset = mutableListOf<CoroutineRepresentation>()
+    private val dataset = mutableListOf<CoroutineTask>()
 
     init {
         coroutineScope.launchWhenResumed {
@@ -30,10 +32,20 @@ class RunningCoroutinesAdapter(
     inner class ViewHolder(
         private val binding: CoroutineRepresentationLayoutBinding
     ): RecyclerView.ViewHolder(binding.root) {
-        fun bind(coroutineRepresentation: CoroutineRepresentation) {
-            coroutineScope.launchWhenResumed {
-                coroutineRepresentation.counter.collect {
-                    binding.coroutineCounter.text = it.toString()
+        fun bind(coroutineTask: CoroutineTask) {
+            when(coroutineTask) {
+                is ActiveCoroutineTask -> {
+                    coroutineScope.launchWhenResumed {
+                        coroutineTask.counter.collect {
+                            binding.coroutineName.text = binding.root.context.getString(R.string.coroutine_item_display, coroutineTask.hashCode(), coroutineTask.name, it)
+                        }
+                    }
+                    binding.coroutineCancelButton.setOnClickListener {
+                        coroutineTask.cancel()
+                    }
+                }
+                is CancelledCoroutineTask -> {
+                    binding.coroutineCancelButton.isEnabled = false
                 }
             }
         }
@@ -57,7 +69,7 @@ class RunningCoroutinesAdapter(
         return dataset.size
     }
 
-    private fun updateDataset(newData: List<CoroutineRepresentation>) {
+    private fun updateDataset(newData: List<CoroutineTask>) {
         dataset.clear()
         dataset.addAll(newData)
     }

@@ -6,7 +6,6 @@ import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.nurilov.flowexample.databinding.ActivityMainBinding
-import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,7 +25,7 @@ class MainActivity : AppCompatActivity() {
         binding.coroutinesList.layoutManager = LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false)
 
         binding.coroutinesAddButton.setOnClickListener {
-            viewModel.startNewCoroutine()
+            viewModel.startNewCoroutine(this)
         }
     }
 }
