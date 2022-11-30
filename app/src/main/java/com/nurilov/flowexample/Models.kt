@@ -5,7 +5,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 @JvmInline
-value class CoroutineTaskIdentifier(val value: Int)
+value class CoroutineTaskIdentifier(val value: Int) {
+    override fun toString(): String {
+        return "$value"
+    }
+}
 val Int.asCoroutineTaskIdentifier: CoroutineTaskIdentifier get() = CoroutineTaskIdentifier(this)
 
 @Suppress("PrivatePropertyName")
@@ -44,6 +48,10 @@ open class CancelledRootCoroutineTaskImpl(
     override val children: List<CoroutineTask>,
 ): CancelledCoroutineTask {
     override val level = 0
+
+    override fun toString(): String {
+        return "${this::class.simpleName}(identifier='$identifier')"
+    }
 }
 
 class CancelledChildCoroutineTaskImpl(
@@ -66,6 +74,8 @@ open class ActiveRootCoroutineTaskImpl(
 
     override val coroutineScope = CoroutineScope(Dispatchers.Default)
 
+    private val eventsObservingScope = CoroutineScope(Dispatchers.Default)
+
     init {
         IndexKeeper.taskCreated(null, identifier)
     }
@@ -73,11 +83,11 @@ open class ActiveRootCoroutineTaskImpl(
     override suspend fun observe(ticker: Ticker) {
         coroutineScope.launch {
             //@formatter:off
-            Log.d(TAG, "root task $identifier started observing ticker")
+            Log.d(TAG, "task ($level) $identifier started observing ticker")
             ticker.ticks
                 .onCompletion {
                     //@formatter:off
-                    Log.d(TAG, "root task $identifier stopped observing ticker")
+                    Log.d(TAG, "task ($level) $identifier stopped observing ticker")
                     events.tryEmit(CoroutineEvent.Cancelled)
                 }
                 .collect {
@@ -87,30 +97,36 @@ open class ActiveRootCoroutineTaskImpl(
     }
 
     override fun cancel() {
-        Log.d(TAG, "root task $identifier cancel() called")
+        Log.d(TAG, "task ($level) $identifier cancel() called")
         coroutineScope.cancel()
     }
 
     override suspend fun launchChild(name: String, ticker: Ticker) {
         coroutineScope.launch {
-            doLaunchChild(name, ticker)
+            doLaunchChild(name, ticker, this)
         }
     }
 
-    protected suspend fun CoroutineScope.doLaunchChild(name: String, ticker: Ticker) {
-        val child = ActiveChildCoroutineTaskImpl(name, this, this@ActiveRootCoroutineTaskImpl)
+    protected suspend fun doLaunchChild(name: String, ticker: Ticker, coroutineScope: CoroutineScope) {
+        val child = ActiveChildCoroutineTaskImpl(name, coroutineScope, this@ActiveRootCoroutineTaskImpl)
+        Log.d(TAG, "task ($level) $identifier launching child with identifier = ${child.identifier}")
         children.add(child)
         events.tryEmit(CoroutineEvent.ChildrenChanged)
         child.observe(ticker)
-        child.events.collectLatest { event ->
-            when (event) {
-                is CoroutineEvent.Cancelled -> {
-                    children.remove(child)
-                    children.add(CancelledChildCoroutineTaskImpl(child))
-                    events.tryEmit(CoroutineEvent.ChildrenChanged)
-                }
-                CoroutineEvent.ChildrenChanged -> {
-                    events.tryEmit(CoroutineEvent.ChildrenChanged)
+
+        eventsObservingScope.launch {
+            child.events.collectLatest { event ->
+                //@formatter:off
+                Log.d(TAG, "task ($level) $identifier event $event from child ${child.identifier}")
+                when (event) {
+                    is CoroutineEvent.Cancelled -> {
+                        children.remove(child)
+                        children.add(CancelledChildCoroutineTaskImpl(child))
+                        events.tryEmit(CoroutineEvent.ChildrenChanged)
+                    }
+                    CoroutineEvent.ChildrenChanged -> {
+                        events.tryEmit(CoroutineEvent.ChildrenChanged)
+                    }
                 }
             }
         }
@@ -121,7 +137,7 @@ open class ActiveRootCoroutineTaskImpl(
     }
 
     override fun toString(): String {
-        return "ActiveRootCoroutineTaskImpl(identifier='$identifier')"
+        return "${this::class.simpleName}(identifier='$identifier')"
     }
 }
 
@@ -138,7 +154,7 @@ class ActiveChildCoroutineTaskImpl(
     }
 
     override suspend fun launchChild(name: String, ticker: Ticker) = coroutineScope {
-        doLaunchChild(name, ticker)
+        doLaunchChild(name, ticker, this)
     }
 }
 

@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 interface MainViewModel: RunningCoroutinesDataProvider {
     val ticker: Ticker
@@ -20,6 +22,8 @@ class MainViewModelImpl: ViewModel(), MainViewModel {
     override val runningCoroutines = MutableStateFlow<List<CoroutineTask>>(emptyList())
 
     override val ticker = TickerImpl()
+
+    private val lock = ReentrantLock()
 
     init {
         // this observation and all other observations on viewModelScope will be cancelled when the ViewModel is cleared by the viewModelScope
@@ -40,10 +44,14 @@ class MainViewModelImpl: ViewModel(), MainViewModel {
                     Log.d(TAG, "startNewCoroutine: event: $event from ${newRootTask.identifier}")
                     when(event) {
                         is CoroutineEvent.Cancelled -> {
-                            runningCoroutines.replaceWithCancelledTask(newRootTask)
+                            lock.withLock {
+                                runningCoroutines.replaceWithCancelledTask(newRootTask)
+                            }
                         }
                         CoroutineEvent.ChildrenChanged -> {
-                            onChildrenChanged(newRootTask)
+                            lock.withLock {
+                                onChildrenChanged(runningCoroutines.value.first { it.identifier == newRootTask.identifier })
+                            }
                         }
                     }
                 }
@@ -52,15 +60,15 @@ class MainViewModelImpl: ViewModel(), MainViewModel {
     }
 
     private fun onChildrenChanged(task: CoroutineTask) {
-        Log.d(TAG, "onChildrenChanged() called with: task = ${task.identifier}")
+        Log.d(TAG, "onChildrenChanged() called with: task = ${task}, children = ${task.children}, ${runningCoroutines.value}")
         removeTaskWithChildren(task)
+        Log.d(TAG, "onChildrenChanged1: runningCoroutines.value: ${runningCoroutines.value}")
         addTaskWithChildren(task)
-        //@formatter:off
-        Log.d(TAG, "onChildrenChanged: runningCoroutines.value: ${runningCoroutines.value}")
+        Log.d(TAG, "onChildrenChanged2: runningCoroutines.value: ${runningCoroutines.value}")
     }
 
     private fun removeTaskWithChildren(task: CoroutineTask) {
-        runningCoroutines.value = runningCoroutines.value - task
+        runningCoroutines.value = runningCoroutines.value.filter { it.identifier != task.identifier }
         task.children.forEach { child ->
             removeTaskWithChildren(child)
         }
