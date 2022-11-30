@@ -11,3 +11,21 @@ internal fun <T> MutableSharedFlowConfigured(): MutableSharedFlow<T> {
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
 }
+
+object IndexKeeper {
+    private val indexes = mutableListOf<CoroutineTaskIdentifier>()
+
+    fun taskCreated(parentIdentifier: CoroutineTaskIdentifier?, taskIdentifier: CoroutineTaskIdentifier) {
+        parentIdentifier?.let {
+            indexes.indexOf(it).let { parentIndex ->
+                indexes.add(parentIndex + 1, taskIdentifier)
+            }
+        } ?: let {
+            indexes.add(taskIdentifier)
+        }
+    }
+
+    fun getIndexForTask(taskIdentifier: CoroutineTaskIdentifier): Int {
+        return indexes.indexOf(taskIdentifier)
+    }
+}

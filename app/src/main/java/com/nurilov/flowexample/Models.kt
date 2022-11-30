@@ -4,20 +4,23 @@ import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
+@JvmInline
+value class CoroutineTaskIdentifier(val value: Int)
+val Int.asCoroutineTaskIdentifier: CoroutineTaskIdentifier get() = CoroutineTaskIdentifier(this)
 
 @Suppress("PrivatePropertyName")
 private val TAG = "${CoroutineTask::class.simpleName}"
 
 sealed interface CoroutineTask {
     val name: String
-    val identifier: Int
+    val identifier: CoroutineTaskIdentifier
     val level: Int
+    val children: List<CoroutineTask>
 }
 
 interface ActiveCoroutineTask: CoroutineTask {
     val counter: StateFlow<Int>
     val events: SharedFlow<CoroutineEvent>
-    val children: StateFlow<List<CoroutineTask>>
 
     val coroutineScope: CoroutineScope
 
@@ -28,7 +31,6 @@ interface ActiveCoroutineTask: CoroutineTask {
 
 interface CancelledCoroutineTask: CoroutineTask {
     val lastCounterValue: Int
-    val children: List<CoroutineTask>
 }
 
 interface ChildCoroutineTask {
@@ -38,18 +40,17 @@ interface ChildCoroutineTask {
 open class CancelledRootCoroutineTaskImpl(
     override val name: String,
     override val lastCounterValue: Int,
-    override val identifier: Int,
+    override val identifier: CoroutineTaskIdentifier,
     override val children: List<CoroutineTask>,
 ): CancelledCoroutineTask {
     override val level = 0
 }
 
 class CancelledChildCoroutineTaskImpl(
-    name: String,
-    fromActive: ActiveCoroutineTask,
-    override val parent: ActiveCoroutineTask,
-): CancelledRootCoroutineTaskImpl(name, fromActive.counter.value, fromActive.identifier, fromActive.children.value), ChildCoroutineTask {
+    fromActive: ActiveChildCoroutineTaskImpl,
+): CancelledRootCoroutineTaskImpl(fromActive.name, fromActive.counter.value, fromActive.identifier, fromActive.children), ChildCoroutineTask {
     override val level: Int = fromActive.level
+    override val parent = fromActive.parent
 }
 
 open class ActiveRootCoroutineTaskImpl(
@@ -58,12 +59,16 @@ open class ActiveRootCoroutineTaskImpl(
 
     override val counter = MutableStateFlow(0)
     override val events = MutableSharedFlowConfigured<CoroutineEvent>()
-    override val children = MutableStateFlow<List<CoroutineTask>>(emptyList())
-    override val identifier: Int
-        get() = hashCode()
+    override val children: MutableList<CoroutineTask> = mutableListOf()
+    final override val identifier: CoroutineTaskIdentifier
+        get() = hashCode().asCoroutineTaskIdentifier
     override val level = 0
 
     override val coroutineScope = CoroutineScope(Dispatchers.Default)
+
+    init {
+        IndexKeeper.taskCreated(null, identifier)
+    }
 
     override suspend fun observe(ticker: Ticker) {
         coroutineScope.launch {
@@ -94,13 +99,14 @@ open class ActiveRootCoroutineTaskImpl(
 
     protected suspend fun CoroutineScope.doLaunchChild(name: String, ticker: Ticker) {
         val child = ActiveChildCoroutineTaskImpl(name, this, this@ActiveRootCoroutineTaskImpl)
-        children.value = children.value + child
+        children.add(child)
         events.tryEmit(CoroutineEvent.ChildrenChanged)
         child.observe(ticker)
         child.events.collectLatest { event ->
             when (event) {
                 is CoroutineEvent.Cancelled -> {
-                    children.replaceWithCancelledChildTask(child)
+                    children.remove(child)
+                    children.add(CancelledChildCoroutineTaskImpl(child))
                     events.tryEmit(CoroutineEvent.ChildrenChanged)
                 }
                 CoroutineEvent.ChildrenChanged -> {
@@ -127,6 +133,10 @@ class ActiveChildCoroutineTaskImpl(
 
     override val level = parent.level + 1
 
+    init {
+        IndexKeeper.taskCreated(parent.identifier, identifier)
+    }
+
     override suspend fun launchChild(name: String, ticker: Ticker) = coroutineScope {
         doLaunchChild(name, ticker)
     }
@@ -139,8 +149,4 @@ sealed class CoroutineEvent {
     override fun toString(): String {
         return "${this::class.simpleName}"
     }
-}
-
-fun MutableStateFlow<List<CoroutineTask>>.replaceWithCancelledChildTask(task: ActiveChildCoroutineTaskImpl) {
-    value = value - task + CancelledChildCoroutineTaskImpl(task.name, task, task.parent)
 }

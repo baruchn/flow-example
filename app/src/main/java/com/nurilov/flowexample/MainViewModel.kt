@@ -61,37 +61,19 @@ class MainViewModelImpl: ViewModel(), MainViewModel {
 
     private fun removeTaskWithChildren(task: CoroutineTask) {
         runningCoroutines.value = runningCoroutines.value - task
-        when (task) {
-            is ActiveCoroutineTask -> {
-                task.children.value.forEach { child ->
-                    removeTaskWithChildren(child)
-                }
-            }
-            is CancelledCoroutineTask -> {
-                task.children.forEach { child ->
-                    removeTaskWithChildren(child)
-                }
-            }
+        task.children.forEach { child ->
+            removeTaskWithChildren(child)
         }
     }
 
     private fun addTaskWithChildren(task: CoroutineTask) {
         runningCoroutines.value = runningCoroutines.value + task
-        when (task) {
-            is ActiveCoroutineTask -> {
-                task.children.value.forEach { child ->
-                    addTaskWithChildren(child)
-                }
-            }
-            is CancelledCoroutineTask -> {
-                task.children.forEach { child ->
-                    addTaskWithChildren(child)
-                }
-            }
+        task.children.sortedBy { it.level }.forEach { child ->
+            addTaskWithChildren(child)
         }
     }
 }
 
 fun MutableStateFlow<List<CoroutineTask>>.replaceWithCancelledTask(task: ActiveCoroutineTask) {
-    value = value - task + CancelledRootCoroutineTaskImpl(task.name, task.counter.value, task.identifier, task.children.value)
+    value = value - task + CancelledRootCoroutineTaskImpl(task.name, task.counter.value, task.identifier, task.children)
 }
