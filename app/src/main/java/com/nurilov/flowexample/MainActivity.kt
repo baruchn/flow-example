@@ -20,12 +20,13 @@ class MainActivity : AppCompatActivity() {
         binding.coroutinesList.adapter = RunningCoroutinesAdapter(
             viewModel,
             lifecycleScope,
+            viewModel.ticker,
         )
 
         binding.coroutinesList.layoutManager = LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false)
 
         binding.coroutinesAddButton.setOnClickListener {
-            viewModel.startNewCoroutine(this)
+            viewModel.startNewCoroutine(getString(R.string.root_coroutine_name))
         }
     }
 }

@@ -1,32 +1,97 @@
 package com.nurilov.flowexample
 
-import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 interface MainViewModel: RunningCoroutinesDataProvider {
-    fun startNewCoroutine(context: Context)
+    val ticker: Ticker
+
+    fun startNewCoroutine(name: String)
 }
 
 class MainViewModelImpl: ViewModel(), MainViewModel {
-    override val runningCoroutines = MutableStateFlow<List<CoroutineTask>>(listOf())
 
-    private val ticker = TickerImpl()
+    @Suppress("PrivatePropertyName")
+    private val TAG = "CoroutineTask:${MainViewModel::class.simpleName}"
+
+    override val runningCoroutines = MutableStateFlow<List<CoroutineTask>>(emptyList())
+
+    override val ticker = TickerImpl()
 
     init {
-        // this observation will be cancelled when the ViewModel is cleared by the viewModelScope
+        // this observation and all other observations on viewModelScope will be cancelled when the ViewModel is cleared by the viewModelScope
         viewModelScope.launch {
             ticker.startTicking(1000)
         }
     }
 
-    override fun startNewCoroutine(context: Context) {
-        runningCoroutines.value = runningCoroutines.value + ActiveCoroutineTaskImpl(context.getString(R.string.root_coroutine_name)) {
-            runningCoroutines.value = runningCoroutines.value - it + CancelledCoroutineTaskImpl(it.name, it.counter.value)
-        }.also {
-            it.observe(ticker)
+    override fun startNewCoroutine(name: String) {
+        runningCoroutines.value = runningCoroutines.value + ActiveRootCoroutineTaskImpl(name).also { newRootTask ->
+
+            //@formatter:off
+            Log.d(TAG, "startNewCoroutine: starting new coroutine with identifier: ${newRootTask.identifier}")
+
+            viewModelScope.launch {
+                newRootTask.observe(ticker)
+                newRootTask.events.collect { event ->
+                    Log.d(TAG, "startNewCoroutine: event: $event from ${newRootTask.identifier}")
+                    when(event) {
+                        is CoroutineEvent.Cancelled -> {
+                            runningCoroutines.replaceWithCancelledTask(newRootTask)
+                        }
+                        CoroutineEvent.ChildrenChanged -> {
+                            onChildrenChanged(newRootTask)
+                        }
+                    }
+                }
+            }
         }
     }
+
+    private fun onChildrenChanged(task: CoroutineTask) {
+        Log.d(TAG, "onChildrenChanged() called with: task = ${task.identifier}")
+        removeTaskWithChildren(task)
+        addTaskWithChildren(task)
+        //@formatter:off
+        Log.d(TAG, "onChildrenChanged: runningCoroutines.value: ${runningCoroutines.value}")
+    }
+
+    private fun removeTaskWithChildren(task: CoroutineTask) {
+        runningCoroutines.value = runningCoroutines.value - task
+        when (task) {
+            is ActiveCoroutineTask -> {
+                task.children.value.forEach { child ->
+                    removeTaskWithChildren(child)
+                }
+            }
+            is CancelledCoroutineTask -> {
+                task.children.forEach { child ->
+                    removeTaskWithChildren(child)
+                }
+            }
+        }
+    }
+
+    private fun addTaskWithChildren(task: CoroutineTask) {
+        runningCoroutines.value = runningCoroutines.value + task
+        when (task) {
+            is ActiveCoroutineTask -> {
+                task.children.value.forEach { child ->
+                    addTaskWithChildren(child)
+                }
+            }
+            is CancelledCoroutineTask -> {
+                task.children.forEach { child ->
+                    addTaskWithChildren(child)
+                }
+            }
+        }
+    }
+}
+
+fun MutableStateFlow<List<CoroutineTask>>.replaceWithCancelledTask(task: ActiveCoroutineTask) {
+    value = value - task + CancelledRootCoroutineTaskImpl(task.name, task.counter.value, task.identifier, task.children.value)
 }
