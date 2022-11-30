@@ -45,6 +45,7 @@ class RunningCoroutinesAdapter(
                     }
                 }
                 is CancelledCoroutineTask -> {
+                    binding.coroutineName.text = binding.root.context.getString(R.string.coroutine_cancelled_item_display, coroutineTask.hashCode(), coroutineTask.name, coroutineTask.lastCounterValue)
                     binding.coroutineCancelButton.isEnabled = false
                 }
             }

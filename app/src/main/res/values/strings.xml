@@ -4,6 +4,7 @@
     <string name="start_new_coroutine">Start a New Coroutine</string>
     <string name="root_coroutine_name">Root Coroutine</string>
     <string name="coroutine_item_display">%1$d %2$s\nRunning for %3$d sec</string>
+    <string name="coroutine_cancelled_item_display">%1$d %2$s\nCancelled after %3$d sec</string>
     <string name="child_coroutine_name">Child of %2$d</string>
     <string name="cancel_coroutine">Cancel</string>
 </resources>

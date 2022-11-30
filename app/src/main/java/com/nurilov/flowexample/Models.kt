@@ -16,9 +16,14 @@ interface ActiveCoroutineTask: CoroutineTask {
     fun cancel()
 }
 
-interface CancelledCoroutineTask: CoroutineTask
+interface CancelledCoroutineTask: CoroutineTask {
+    val lastCounterValue: Int
+}
 
-class CancelledCoroutineTaskImpl(override val name: String): CancelledCoroutineTask
+class CancelledCoroutineTaskImpl(
+    override val name: String,
+    override val lastCounterValue: Int,
+): CancelledCoroutineTask
 
 class ActiveCoroutineTaskImpl(
     override val name: String,

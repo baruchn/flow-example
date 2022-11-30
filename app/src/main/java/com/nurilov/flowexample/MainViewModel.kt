@@ -24,7 +24,7 @@ class MainViewModelImpl: ViewModel(), MainViewModel {
 
     override fun startNewCoroutine(context: Context) {
         runningCoroutines.value = runningCoroutines.value + ActiveCoroutineTaskImpl(context.getString(R.string.root_coroutine_name)) {
-            runningCoroutines.value = runningCoroutines.value - it + CancelledCoroutineTaskImpl(it.name)
+            runningCoroutines.value = runningCoroutines.value - it + CancelledCoroutineTaskImpl(it.name, it.counter.value)
         }.also {
             it.observe(ticker)
         }
